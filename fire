@@ -12,11 +12,14 @@
 #   fire rm <n>       drop entry n       fire clear   empty the queue
 #
 # Env passes straight through:  APPLY=1 fire   ·   APPLY=1 SEARCH=1 fire 3
-# Queue: ~/ops/.fire/queue.tsv (override: FIRE_QUEUE)  (epoch \t path \t note). Paths may contain spaces; nothing here re-quotes them.
+# Queue: ~/.local/share/fire/queue.tsv (override: FIRE_QUEUE)  (epoch \t path \t note). Paths may contain spaces; nothing here re-quotes them.
 # Repo + README: ~/dev/fire
 set -euo pipefail
-FIRE_VERSION="0.2.0"
-Q="${FIRE_QUEUE:-$HOME/ops/.fire/queue.tsv}"; mkdir -p "$(dirname "$Q")"; touch "$Q"
+FIRE_VERSION="0.3.0"
+Q="${FIRE_QUEUE:-${XDG_DATA_HOME:-$HOME/.local/share}/fire/queue.tsv}"; mkdir -p "$(dirname "$Q")"; touch "$Q"
+# portable helpers: macOS first, Linux fallbacks
+_open() { if command -v open >/dev/null 2>&1; then open "$1"; elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1"; else echo "fire: no opener (open/xdg-open)" >&2; exit 1; fi; }
+_clip() { if command -v pbcopy >/dev/null 2>&1; then pbcopy; elif command -v wl-copy >/dev/null 2>&1; then wl-copy; elif command -v xclip >/dev/null 2>&1; then xclip -selection clipboard; else cat; echo "(no clipboard tool; printed instead)" >&2; fi; }
 
 list() {  # newest first, numbered
   [ -s "$Q" ] || { echo "fire: queue is empty"; return 0; }
@@ -35,20 +38,22 @@ run() {
   case "$p" in
     *.sh)  exec bash "$p" ;;
     *.py)  exec python3 "$p" ;;
-    *)     if [ -x "$p" ]; then exec "$p"; fi; echo "(not a script — opening it)"; open "$p" ;;
+    *)     if [ -x "$p" ]; then exec "$p"; fi; echo "(not a script — opening it)"; _open "$p" ;;
   esac
 }
 case "${1:-run}" in
   ls|list)   list ;;
   add)       shift; [ $# -ge 1 ] || { echo "usage: fire add <path|url> [note]" >&2; exit 2; }
              p="$1"; shift; note="${*:-}"
+             case "$p" in */*|http://*|https://*) ;; *) echo "fire: '$p' is not a path or URL — refusing (the queue is paths only, never a token)" >&2; exit 2 ;; esac
+             if printf '%s' "$note" | grep -Eq '(ghp_|github_pat_|xox[baprs]-|tskey-|AKIA[0-9A-Z]{16}|ops_eyJ|sk-[A-Za-z0-9]{20,})'; then echo "fire: note looks like it contains a token — refusing" >&2; exit 2; fi
              case "$p" in http://*|https://*) ;; *) p="$(cd "$(dirname "$p")" 2>/dev/null && pwd)/$(basename "$p")" ;; esac
              printf '%s\t%s\t%s\n' "$(date +%s)" "$p" "$note" >> "$Q"; echo "queued: $p" ;;
   show|cat)  IFS=$'\t' read -r p note < <(entry "${2:-1}"); echo "── $p${note:+   # $note}"
              if command -v bat >/dev/null; then bat --style=numbers --paging=never "$p"; else nl -ba "$p"; fi ;;
   edit|vi)   IFS=$'\t' read -r p note < <(entry "${2:-1}"); exec "${FIRE_EDITOR:-nano}" "$p" ;;   # nano by Kellen's choice (2026-11-09); FIRE_EDITOR=nvim to override
-  open)      IFS=$'\t' read -r p note < <(entry "${2:-1}"); echo "open → $p"; open "$p" ;;
-  path|copy) IFS=$'\t' read -r p note < <(entry "${2:-1}"); printf '%s' "$p" | pbcopy; echo "clipboard ← $p" ;;
+  open)      IFS=$'\t' read -r p note < <(entry "${2:-1}"); echo "open → $p"; _open "$p" ;;
+  path|copy) IFS=$'\t' read -r p note < <(entry "${2:-1}"); printf '%s' "$p" | _clip; echo "clipboard ← $p" ;;
   rm)        n="${2:?usage: fire rm <n>}"; total=$(wc -l < "$Q"); line=$((total - n + 1)); sed -i '' "${line}d" "$Q"; echo "dropped $n" ;;
   clear)     : > "$Q"; echo "queue cleared" ;;
   run)       run 1 ;;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 — 2026-11-09 — public
+- Portable: queue default `~/.local/share/fire/queue.tsv` (XDG), Linux fallbacks for open/clipboard, `install.sh`.
+- Guardrails for a public repo: `fire add` refuses non-paths and token-looking notes; `.gitignore` for secret-shaped
+  files; `.githooks/pre-commit` secret/IP/domain/email scanner with no bypass; GitHub push protection on.
+
 ## 0.2.0 — 2026-11-09
 - `fire show n` (bat, numbered), `fire edit n` (nano; `FIRE_EDITOR` override), `fire version`.
 - Bare `fire n` on a non-script opens it instead of erroring.

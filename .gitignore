@@ -1,1 +1,12 @@
 .DS_Store
+# never any runtime state or anything secret-shaped
+queue.tsv
+.fire/
+*.env
+.env*
+*.pem
+*.key
+*.p12
+*.secret
+*.token
+*credentials*

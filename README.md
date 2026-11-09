@@ -14,11 +14,21 @@ fire open 2      open #2 in its normal Mac app (doc, folder, URL)
 fire path 2      put #2's exact path on the clipboard for another app
 ```
 
+## Install
+
+```
+git clone https://github.com/UncertainMeow/fire.git ~/dev/fire
+~/dev/fire/install.sh
+```
+
+Puts a symlink in `~/.local/bin`, turns on the repo's commit-time secret guard, and tells you if PATH or a
+zsh alias needs a line. macOS and Linux. Nothing is downloaded beyond the clone; `fire` is one bash script.
+
 ## Why this exists
 
 Copying a path or a command out of a terminal is unreliable: wrapped lines, a trailing period from the
 end of a sentence, a stray space, Mac paths with spaces that need quoting, a zoom level you can't read.
-Kellen estimated more than an hour a day lost to exactly that. `fire` removes the copy step.
+The author estimated more than an hour a day lost to exactly that. `fire` removes the copy step.
 The agent queues the path; you refer to it by number.
 
 ## The contract
@@ -65,12 +75,29 @@ Prefer another editor: `FIRE_EDITOR=nvim fire edit 3` for one run, or `export FI
 
 | What | Where |
 |---|---|
-| the command | `~/dev/fire/fire` (this repo), symlinked from `~/ops/bin/fire` (on PATH) |
-| the queue | `~/ops/.fire/queue.tsv`, one line per entry: `epoch ⇥ path ⇥ note`. Plain text, safe to edit or delete. Override: `FIRE_QUEUE=…` |
-| the rule for agents | `AGENTS.md` here, and `~/.claude/CLAUDE.md` |
+| the command | `fire` in this repo, symlinked into `~/.local/bin` by `install.sh` |
+| the queue | `~/.local/share/fire/queue.tsv`, one line per entry: `epoch ⇥ path ⇥ note`. Plain text, outside the repo, safe to edit or delete. Override: `FIRE_QUEUE=…` |
+| the rule for agents | `AGENTS.md` here (and, on Kellen's Mac, `~/.claude/CLAUDE.md`) |
 | self-test | `./test.sh` |
 
 The queue is **not** a secret store. Paths only. Never queue a token.
+
+## What keeps secrets out of this repo
+
+This repo is public. Four layers, none optional:
+
+1. **The queue lives outside the repo** and holds paths only. `fire add` refuses anything that is not a path
+   or URL, and refuses a note that looks like a token.
+2. **`.gitignore`** drops `.env*`, keys, certificates, anything named `*secret*`/`*token*`/`*credentials*`, and
+   the queue file itself.
+3. **A pre-commit hook** (`.githooks/pre-commit`, enabled by `install.sh`) scans every added line for token
+   shapes (GitHub, Slack, Tailscale, AWS, 1Password, OpenAI/Anthropic, Telegram bot, JWTs, private keys),
+   private IPs (`10.`, `192.168.`, Tailscale `100.64-127`), the lab domains, and email addresses. It refuses the
+   commit and prints the line. There is deliberately no bypass flag.
+4. **GitHub secret scanning + push protection** are enabled on the repo, so a push with a known token shape is
+   rejected server-side even if a clone skipped the hook.
+
+If you ever do commit a secret: it is compromised the moment it is pushed. Revoke it first, then rewrite history.
 
 ## Housekeeping
 
@@ -81,8 +108,7 @@ The queue is **not** a secret store. Paths only. Never queue a token.
 
 - **`zsh: correct 'fire' to 'file' [nyae]?`** Your shell has `correct_all`. `~/.zshrc` has
   `alias fire='nocorrect fire'` (added 2026-11-09). Open a new tab if you still see it.
-- **`command not found: fire`** `~/ops/bin` must be on PATH (it is, via `~/.zshrc`). Check `ls -l ~/ops/bin/fire`
-  points at `~/dev/fire/fire`.
+- **`command not found: fire`** `~/.local/bin` must be on PATH. `./install.sh` prints the line to add if not.
 - **`fire: no entry 4 (fire ls)`** Numbers moved. `fire ls`.
 - **Path with spaces opens the wrong thing** Report it. The queue stores the path verbatim and every
   command quotes it; that would be a bug.
