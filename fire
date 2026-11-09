@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# fire — run, open or copy the thing an agent just handed you, WITHOUT copying a path.
+#
+#   fire              run the newest queued script (prints what it is first)
+#   fire ls           numbered list, newest first
+#   fire 2            run entry 2
+#   fire show [n]     print entry n (script or doc) in the terminal, with line numbers
+#   fire edit [n]     open entry n in nano (FIRE_EDITOR=nvim to override) — read, change, Ctrl+O Enter Ctrl+X, then `fire n`
+#   fire open [n]     open entry n with the Mac `open` command — docs, folders, URLs
+#   fire path [n]     put entry n's path on the clipboard (for another app)
+#   fire add <path|url> [note…]   (agents use this; Kellen never types paths)
+#   fire rm <n>       drop entry n       fire clear   empty the queue
+#
+# Env passes straight through:  APPLY=1 fire   ·   APPLY=1 SEARCH=1 fire 3
+# Queue: ~/ops/.fire/queue.tsv (override: FIRE_QUEUE)  (epoch \t path \t note). Paths may contain spaces; nothing here re-quotes them.
+# Repo + README: ~/dev/fire
+set -euo pipefail
+FIRE_VERSION="0.2.0"
+Q="${FIRE_QUEUE:-$HOME/ops/.fire/queue.tsv}"; mkdir -p "$(dirname "$Q")"; touch "$Q"
+
+list() {  # newest first, numbered
+  [ -s "$Q" ] || { echo "fire: queue is empty"; return 0; }
+  tac "$Q" | awk -F'\t' '{ printf "%2d  %s  %s\n", NR, $2, $3 }'
+}
+entry() { # $1 = n (1 = newest) -> prints path \t note
+  local n="${1:-1}"
+  [ -s "$Q" ] || { echo "fire: queue is empty" >&2; exit 1; }
+  tac "$Q" | sed -n "${n}p" | cut -f2,3
+  [ -n "$(tac "$Q" | sed -n "${n}p")" ] || { echo "fire: no entry $n (fire ls)" >&2; exit 1; }
+}
+run() {
+  local n="${1:-1}" p note
+  IFS=$'\t' read -r p note < <(entry "$n")
+  echo "fire → $p${note:+   # $note}"
+  case "$p" in
+    *.sh)  exec bash "$p" ;;
+    *.py)  exec python3 "$p" ;;
+    *)     if [ -x "$p" ]; then exec "$p"; fi; echo "(not a script — opening it)"; open "$p" ;;
+  esac
+}
+case "${1:-run}" in
+  ls|list)   list ;;
+  add)       shift; [ $# -ge 1 ] || { echo "usage: fire add <path|url> [note]" >&2; exit 2; }
+             p="$1"; shift; note="${*:-}"
+             case "$p" in http://*|https://*) ;; *) p="$(cd "$(dirname "$p")" 2>/dev/null && pwd)/$(basename "$p")" ;; esac
+             printf '%s\t%s\t%s\n' "$(date +%s)" "$p" "$note" >> "$Q"; echo "queued: $p" ;;
+  show|cat)  IFS=$'\t' read -r p note < <(entry "${2:-1}"); echo "── $p${note:+   # $note}"
+             if command -v bat >/dev/null; then bat --style=numbers --paging=never "$p"; else nl -ba "$p"; fi ;;
+  edit|vi)   IFS=$'\t' read -r p note < <(entry "${2:-1}"); exec "${FIRE_EDITOR:-nano}" "$p" ;;   # nano by Kellen's choice (2026-11-09); FIRE_EDITOR=nvim to override
+  open)      IFS=$'\t' read -r p note < <(entry "${2:-1}"); echo "open → $p"; open "$p" ;;
+  path|copy) IFS=$'\t' read -r p note < <(entry "${2:-1}"); printf '%s' "$p" | pbcopy; echo "clipboard ← $p" ;;
+  rm)        n="${2:?usage: fire rm <n>}"; total=$(wc -l < "$Q"); line=$((total - n + 1)); sed -i '' "${line}d" "$Q"; echo "dropped $n" ;;
+  clear)     : > "$Q"; echo "queue cleared" ;;
+  run)       run 1 ;;
+  version|-V) echo "fire $FIRE_VERSION" ;;
+  -h|--help|help) sed -n '2,16p' "$(readlink -f "$0")" ;;
+  *[!0-9]*)  echo "fire: unknown command '$1' (fire help)" >&2; exit 2 ;;
+  *)         run "$1" ;;
+esac
